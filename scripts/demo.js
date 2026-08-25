@@ -24,6 +24,14 @@ const REPORT = JSON.stringify({
   tonnes_co2e: 245388.017,
 });
 
+// Where the full report lives off-chain. The chain carries the fingerprint; this
+// says where to find the document it fingerprints.
+const EVIDENCE_URI = "ipfs://QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o";
+
+// Q1 2026, a period that has already closed.
+const Q1_START = 1767225600; // 2026-01-01T00:00:00Z
+const Q1_END = 1774915200;   // 2026-03-31T00:00:00Z
+
 function line(label, value) {
   console.log(`   ${label.padEnd(24)} ${value}`);
 }
@@ -68,7 +76,9 @@ async function main() {
   // -- Access control, shown by failure --------------------------------
   console.log("\n[4] An unauthorised submission is refused");
   try {
-    await registry.connect(auditor).submitRecord(1, "2026-Q1", ethers.keccak256("0x00"));
+    await registry
+      .connect(auditor)
+      .submitRecord(1, Q1_START, Q1_END, ethers.keccak256("0x00"), EVIDENCE_URI);
     console.log("   UNEXPECTED: the call succeeded");
   } catch (e) {
     line("reverted with", e.shortMessage ?? e.message);
@@ -84,15 +94,18 @@ async function main() {
   line("tonnes CO2e", JSON.parse(REPORT).tonnes_co2e);
   line("salt", salt);
   line("report hash", reportHash);
+  line("evidence URI", EVIDENCE_URI);
 
   await step(5, "Operator submits the record as a hash",
-    registry.connect(operator).submitRecord(1, "2026-Q1", reportHash));
+    registry.connect(operator).submitRecord(1, Q1_START, Q1_END, reportHash, EVIDENCE_URI));
   line("record id", (await registry.recordCount()).toString());
 
   // -- Duplicate filing is refused -------------------------------------
   console.log("\n[6] The same period cannot be filed twice");
   try {
-    await registry.connect(operator).submitRecord(1, "2026-Q1", ethers.keccak256("0x01"));
+    await registry
+      .connect(operator)
+      .submitRecord(1, Q1_START, Q1_END, ethers.keccak256("0x01"), EVIDENCE_URI);
     console.log("   UNEXPECTED: the call succeeded");
   } catch (e) {
     line("reverted with", e.shortMessage ?? e.message);
@@ -126,7 +139,9 @@ async function main() {
   console.log("\n[10] An auditor with no role reads the record");
   const asAuditor = await registry.connect(auditor).getRecord(1);
   line("facility", (await registry.getFacility(asAuditor.facilityId)).name);
-  line("period", asAuditor.period);
+  line("period", `${new Date(Number(asAuditor.periodStart) * 1000).toISOString().slice(0, 10)}` +
+    ` to ${new Date(Number(asAuditor.periodEnd) * 1000).toISOString().slice(0, 10)}`);
+  line("evidence URI", asAuditor.evidenceURI);
   line("status", STATUS[Number(asAuditor.status)]);
   line("records for facility 1", (await registry.getFacilityRecordIds(1)).map(String).join(", "));
 

@@ -10,6 +10,17 @@ const Status = { None: 0n, Submitted: 1n, Verified: 2n, Rejected: 3n };
 const REPORT =
   '{"facility":"Plant A","period":"2026-Q1","method":"IPCC 2006 Tier 2","tonnes_co2e":245388.017}';
 
+// Where the full report lives. Anchoring a hash without a pointer to the document
+// would leave an auditor knowing a fingerprint exists but not where to find it.
+const URI = "ipfs://QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o";
+
+// A closed reporting period: Q1 2026. periodEnd must already have passed, so these
+// are fixed historical timestamps rather than anything derived from "now".
+const Q1_START = 1767225600; // 2026-01-01T00:00:00Z
+const Q1_END = 1774915200; // 2026-03-31T00:00:00Z
+const Q2_START = 1774915200; // 2026-03-31T00:00:00Z
+const Q2_END = 1782777600; // 2026-06-30T00:00:00Z
+
 function hashReport(report, salt) {
   return ethers.keccak256(
     ethers.solidityPacked(["string", "bytes32"], [report, salt])
@@ -42,7 +53,7 @@ describe("EmissionsRegistry", function () {
     const ctx = await seededFixture();
     const { registry, operator, salt } = ctx;
     const reportHash = hashReport(REPORT, salt);
-    await registry.connect(operator).submitRecord(1, "2026-Q1", reportHash);
+    await registry.connect(operator).submitRecord(1, Q1_START, Q1_END, reportHash, URI);
     return { ...ctx, reportHash };
   }
 
@@ -120,7 +131,7 @@ describe("EmissionsRegistry", function () {
       const { registry, regulator, operator, salt } = await loadFixture(seededFixture);
       await registry.connect(regulator).setOperator(operator.address, false);
       await expect(
-        registry.connect(operator).submitRecord(1, "2026-Q1", hashReport(REPORT, salt))
+        registry.connect(operator).submitRecord(1, Q1_START, Q1_END, hashReport(REPORT, salt), URI)
       ).to.be.revertedWith("EmissionsRegistry: caller is not an operator");
     });
   });
@@ -196,7 +207,7 @@ describe("EmissionsRegistry", function () {
       const { registry, regulator, operator, salt } = await loadFixture(seededFixture);
       await registry.connect(regulator).setFacilityActive(1, false);
       await expect(
-        registry.connect(operator).submitRecord(1, "2026-Q1", hashReport(REPORT, salt))
+        registry.connect(operator).submitRecord(1, Q1_START, Q1_END, hashReport(REPORT, salt), URI)
       ).to.be.revertedWith("EmissionsRegistry: facility is suspended");
     });
   });
@@ -210,13 +221,15 @@ describe("EmissionsRegistry", function () {
       const { registry, operator, salt } = await loadFixture(seededFixture);
       const reportHash = hashReport(REPORT, salt);
 
-      await expect(registry.connect(operator).submitRecord(1, "2026-Q1", reportHash))
+      await expect(registry.connect(operator).submitRecord(1, Q1_START, Q1_END, reportHash, URI))
         .to.emit(registry, "RecordSubmitted")
-        .withArgs(1n, 1n, "2026-Q1", reportHash, operator.address);
+        .withArgs(1n, 1n, Q1_START, Q1_END, reportHash, URI, operator.address);
 
       const r = await registry.getRecord(1);
       expect(r.facilityId).to.equal(1n);
-      expect(r.period).to.equal("2026-Q1");
+      expect(r.periodStart).to.equal(BigInt(Q1_START));
+      expect(r.periodEnd).to.equal(BigInt(Q1_END));
+      expect(r.evidenceURI).to.equal(URI);
       expect(r.reportHash).to.equal(reportHash);
       expect(r.submittedBy).to.equal(operator.address);
       expect(r.status).to.equal(Status.Submitted);
@@ -227,7 +240,7 @@ describe("EmissionsRegistry", function () {
     it("refuses a caller who is not an operator", async function () {
       const { registry, outsider, salt } = await loadFixture(seededFixture);
       await expect(
-        registry.connect(outsider).submitRecord(1, "2026-Q1", hashReport(REPORT, salt))
+        registry.connect(outsider).submitRecord(1, Q1_START, Q1_END, hashReport(REPORT, salt), URI)
       ).to.be.revertedWith("EmissionsRegistry: caller is not an operator");
     });
 
@@ -236,37 +249,50 @@ describe("EmissionsRegistry", function () {
       // outsider is accredited, but Plant A belongs to operator
       await registry.connect(regulator).setOperator(outsider.address, true);
       await expect(
-        registry.connect(outsider).submitRecord(1, "2026-Q1", hashReport(REPORT, salt))
+        registry.connect(outsider).submitRecord(1, Q1_START, Q1_END, hashReport(REPORT, salt), URI)
       ).to.be.revertedWith("EmissionsRegistry: not this facility's operator");
     });
 
     it("refuses an unknown facility", async function () {
       const { registry, operator, salt } = await loadFixture(seededFixture);
       await expect(
-        registry.connect(operator).submitRecord(99, "2026-Q1", hashReport(REPORT, salt))
+        registry.connect(operator).submitRecord(99, Q1_START, Q1_END, hashReport(REPORT, salt), URI)
       ).to.be.revertedWith("EmissionsRegistry: no such facility");
     });
 
-    it("refuses an empty period or an empty hash", async function () {
+    it("refuses an inverted period, an empty hash or an empty evidence URI", async function () {
       const { registry, operator, salt } = await loadFixture(seededFixture);
       await expect(
-        registry.connect(operator).submitRecord(1, "", hashReport(REPORT, salt))
-      ).to.be.revertedWith("EmissionsRegistry: period is empty");
+        registry.connect(operator).submitRecord(1, Q1_END, Q1_START, hashReport(REPORT, salt), URI)
+      ).to.be.revertedWith("EmissionsRegistry: period end is not after start");
       await expect(
-        registry.connect(operator).submitRecord(1, "2026-Q1", ethers.ZeroHash)
+        registry.connect(operator).submitRecord(1, Q1_START, Q1_END, ethers.ZeroHash, URI)
       ).to.be.revertedWith("EmissionsRegistry: report hash is empty");
+      await expect(
+        registry.connect(operator).submitRecord(1, Q1_START, Q1_END, hashReport(REPORT, salt), "")
+      ).to.be.revertedWith("EmissionsRegistry: evidence URI is empty");
+    });
+
+    it("refuses a period that has not closed yet", async function () {
+      const { registry, operator, salt } = await loadFixture(seededFixture);
+      const future = Math.floor(Date.now() / 1000) + 86_400 * 365;
+      await expect(
+        registry
+          .connect(operator)
+          .submitRecord(1, Q1_START, future, hashReport(REPORT, salt), URI)
+      ).to.be.revertedWith("EmissionsRegistry: period has not closed yet");
     });
 
     it("refuses a second filing for the same period", async function () {
       const { registry, operator, salt } = await loadFixture(submittedFixture);
       await expect(
-        registry.connect(operator).submitRecord(1, "2026-Q1", hashReport("different", salt))
+        registry.connect(operator).submitRecord(1, Q1_START, Q1_END, hashReport("different", salt), URI)
       ).to.be.revertedWith("EmissionsRegistry: period already filed for this facility");
     });
 
     it("allows a different period for the same facility", async function () {
       const { registry, operator, salt } = await loadFixture(submittedFixture);
-      await registry.connect(operator).submitRecord(1, "2026-Q2", hashReport("q2", salt));
+      await registry.connect(operator).submitRecord(1, Q2_START, Q2_END, hashReport("q2", salt), URI);
       expect(await registry.recordCount()).to.equal(2n);
       expect(await registry.getFacilityRecordIds(1)).to.deep.equal([1n, 2n]);
     });
