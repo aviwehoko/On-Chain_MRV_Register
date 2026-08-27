@@ -1,20 +1,10 @@
-/**
- * End-to-end walkthrough against the local node. This is the script behind the
- * demonstration video: it runs the whole lifecycle in order and prints the gas
- * each step costs.
- *
- *   Terminal 1:  npx hardhat node
- *   Terminal 2:  npx hardhat run scripts/deploy.js --network localhost
- *                npx hardhat run scripts/demo.js   --network localhost
- */
 const fs = require("fs");
 const path = require("path");
 const { ethers, network } = require("hardhat");
 
 const STATUS = ["None", "Submitted", "Verified", "Rejected"];
 
-// The full report. This is what the plant sends privately to the verifier.
-// Only its hash ever reaches the chain.
+// The full report. Plant sends privately to the verifier. Only the hash reaches the chain.
 const REPORT = JSON.stringify({
   facility: "Plant A",
   period: "2026-Q1",
@@ -24,13 +14,12 @@ const REPORT = JSON.stringify({
   tonnes_co2e: 245388.017,
 });
 
-// Where the full report lives off-chain. The chain carries the fingerprint; this
-// says where to find the document it fingerprints.
+// Full report lives off-chain. The chain carries the fingerprint of where to find the document.
 const EVIDENCE_URI = "ipfs://QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o";
 
 // Q1 2026, a period that has already closed.
-const Q1_START = 1767225600; // 2026-01-01T00:00:00Z
-const Q1_END = 1774915200;   // 2026-03-31T00:00:00Z
+const Q1_START = 1767225600; 
+const Q1_END = 1774915200;   
 
 function line(label, value) {
   console.log(`   ${label.padEnd(24)} ${value}`);
@@ -62,18 +51,18 @@ async function main() {
   line("verifier", verifier.address);
   line("auditor (no role)", auditor.address);
 
-  // -- Accreditation ---------------------------------------------------
+  // Accreditation
   await step(1, "Regulator accredits the plant operator",
     registry.connect(regulator).setOperator(operator.address, true));
 
   await step(2, "Regulator accredits the third-party verifier",
     registry.connect(regulator).setVerifier(verifier.address, true));
 
-  // -- Facility --------------------------------------------------------
+  // Facility
   await step(3, "Regulator registers the facility",
     registry.connect(regulator).registerFacility("Plant A", "Cement", operator.address));
 
-  // -- Access control, shown by failure --------------------------------
+  // Access control, shown by failure
   console.log("\n[4] An unauthorised submission is refused");
   try {
     await registry
@@ -84,7 +73,7 @@ async function main() {
     line("reverted with", e.shortMessage ?? e.message);
   }
 
-  // -- The hash --------------------------------------------------------
+  // The hash
   const salt = ethers.hexlify(ethers.randomBytes(32));
   const reportHash = ethers.keccak256(
     ethers.solidityPacked(["string", "bytes32"], [REPORT, salt])
@@ -100,7 +89,7 @@ async function main() {
     registry.connect(operator).submitRecord(1, Q1_START, Q1_END, reportHash, EVIDENCE_URI));
   line("record id", (await registry.recordCount()).toString());
 
-  // -- Duplicate filing is refused -------------------------------------
+  // Duplicate filing is refused
   console.log("\n[6] The same period cannot be filed twice");
   try {
     await registry
@@ -111,13 +100,13 @@ async function main() {
     line("reverted with", e.shortMessage ?? e.message);
   }
 
-  // -- Selective disclosure --------------------------------------------
+  // Selective disclosure 
   console.log("\n[7] The verifier checks the report it was sent privately");
   line("correct report", await registry.checkReport(1, REPORT, salt));
   const tampered = REPORT.replace("245388.017", "235388.017");
   line("understated by 10kt", await registry.checkReport(1, tampered, salt));
 
-  // -- Verification ----------------------------------------------------
+  // Verification
   await step(8, "Verifier accepts the record",
     registry.connect(verifier).verifyRecord(1, true));
 
@@ -126,7 +115,7 @@ async function main() {
   line("verified by", r.verifiedBy);
   line("report hash unchanged", r.reportHash === reportHash);
 
-  // -- Immutability ----------------------------------------------------
+  // Immutability
   console.log("\n[9] The record cannot be decided again");
   try {
     await registry.connect(verifier).verifyRecord(1, false);
@@ -135,7 +124,7 @@ async function main() {
     line("reverted with", e.shortMessage ?? e.message);
   }
 
-  // -- Public read -----------------------------------------------------
+  // Public read
   console.log("\n[10] An auditor with no role reads the record");
   const asAuditor = await registry.connect(auditor).getRecord(1);
   line("facility", (await registry.getFacility(asAuditor.facilityId)).name);
