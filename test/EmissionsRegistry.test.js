@@ -57,9 +57,7 @@ describe("EmissionsRegistry", function () {
     return { ...ctx, reportHash };
   }
 
-  // ===================================================================
   // Deployment
-  // ===================================================================
 
   describe("Deployment", function () {
     it("stores the regulator named at construction", async function () {
@@ -86,9 +84,7 @@ describe("EmissionsRegistry", function () {
     });
   });
 
-  // ===================================================================
   // Roles
-  // ===================================================================
 
   describe("Role administration", function () {
     it("lets the regulator accredit an operator and emits the event", async function () {
@@ -136,9 +132,7 @@ describe("EmissionsRegistry", function () {
     });
   });
 
-  // ===================================================================
   // Facilities
-  // ===================================================================
 
   describe("registerFacility", function () {
     it("registers a facility and stores every field", async function () {
@@ -212,9 +206,7 @@ describe("EmissionsRegistry", function () {
     });
   });
 
-  // ===================================================================
   // Submitting
-  // ===================================================================
 
   describe("submitRecord", function () {
     it("stores the hash and emits the event", async function () {
@@ -298,9 +290,7 @@ describe("EmissionsRegistry", function () {
     });
   });
 
-  // ===================================================================
   // Verifying
-  // ===================================================================
 
   describe("verifyRecord", function () {
     it("moves Submitted to Verified and records who decided", async function () {
@@ -361,9 +351,7 @@ describe("EmissionsRegistry", function () {
     });
   });
 
-  // ===================================================================
   // The hash, and reading
-  // ===================================================================
 
   describe("checkReport", function () {
     it("accepts the correct report and salt", async function () {
