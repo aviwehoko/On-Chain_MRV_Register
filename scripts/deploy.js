@@ -1,16 +1,3 @@
-/**
- * Deploy EmissionsRegistry to the local Hardhat node.
- *
- *   Terminal 1:  npx hardhat node
- *   Terminal 2:  npx hardhat run scripts/deploy.js --network localhost
- *
- * Writes deployments/<network>.json with the contract address and deployment
- * transaction hash.
- *
- * NOTE: the assignment also requires a deployment signed through MetaMask. Do that
- * one separately and cite ITS address and transaction hash in the report — the ones
- * this script prints come from a Hardhat-signed deployment.
- */
 const fs = require("fs");
 const path = require("path");
 const { ethers, network } = require("hardhat");
